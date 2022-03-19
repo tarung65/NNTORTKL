@@ -7,6 +7,7 @@
 #include <vector>
 #include <stdexcept>
 #include <unordered_map>;
+#include <map>
 enum ACT_FUNC
 {
 	RELU = 1,
@@ -28,6 +29,9 @@ class Precptron {
 	Layer* owner;
 public:
 	Precptron(ACT_FUNC func, int no_inputs, std::vector< float>& weights,Layer* l, float bias);
+	float getWeight(int i);
+	float getBias();
+	ACT_FUNC getActFunc();
 };
 
 
@@ -45,6 +49,12 @@ public:
 	static ACT_FUNC getActFunc(int layer_no);
 	void setNextLayer(Layer* next_layer) {
 		this->_next_layer = next_layer;
+	}
+	int getNoOfOutputs() {
+		return _no_preceptron;
+	}
+	Precptron* getPreceptron(int i) {
+		return _precptron[i];
 	}
 };
 
@@ -67,6 +77,7 @@ public:
 	int getOutputs() {
 		return _no_outputs;
 	}
+	std::vector<Layer*>& getLayers();
 };
 class Port;
 class Net;
@@ -76,25 +87,83 @@ enum class NType {
 	Port, Net, Instance, Pin
 };
 class Name {
+	std::string str;
+	static unordered_map<string, Name*> map;
 	static int port_c;
 	static int net_c;
 	static int pin_c;
 	static int instance_c;
-	std::string getUniqueName(NType t);
+public:
+	Name(string s);
+	static Name* getUniqueName(NType t);
+	static std::string getNameStr(Name* n);
+	static Name* getNameForStr(string s);
 };
 class Netlist {
-	std::unordered_map<std::string, Port> ports;
-	std::unordered_map<std::string, Net> ports;
-	std::unordered_map<std::string, Instance> ports;
+public:
+	std::unordered_map<Name*, Port*> inports;
+	std::unordered_map<Name*, Port*> outports;
+	std::unordered_map<Name*, Net*> nets;
+	std::unordered_map<Name*, Instance*> insts;
+	Netlist(NeuralNetwork* nt);
+	void createInports(int i);
+	void createOutports(int i);
+	std::vector<Net> createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net> previous_layer_nets);
+	Net* createNet(bool isConst = false, float val = 0);
+	Net* createAdd(Net* i1, NNet* i2);
+	Net* createMul(Net* np, float val);
+	Net* addBias(Net* np, float val);
+	Net* createActFunc(Net* np, Net* onp,ACT_FUNC f);
+	void ProcessPreceptron(Precptron* p,std::vector<Net*>& inputNets,Net* onp);
+};
+enum class InstType {
+	add,mult,reg,actFunc
 };
 
 class Instance {
-	std::string name;
-	std::vector<Pin> input_pins;
-	std::vector<Pin> output_pins;
+public :
+	Name* n;
+	InstType type;
+	ACT_FUNC func;
+	std::vector<Pin*> input_pins;
+	Pin* output_pin;
+	Instance(InstType t);
+	Instance(ACT_FUNC f);
+	void createAdder();
+	void creatMult();
+	void createReg();
+
 };
 class Net {
-	std::string name;
-	std::vector<Pin> pins;
+	static std::map< float val,Net* np> constMap;
+	Name* n;
+	bool isPort;
+	Pin* pin;
+	bool isConst;
+	Net(Name* n, bool isPort = false,bool isConst = false,float val =0);
+	static Net* createConstNet(Name* n,float val);
 };
+enum class Dir {
+	in, out
+};
+class Port {
+	Dir dir;
+	Name* n;
+	Net* np;
+	Pin* pin;
+	Netlist* nl;
+public:
+	Port(Netlist* nl, Dir dir);
+	Name* getName();
+};
+class Pin {
+public:
+	Dir dir;
+	bool istopIO;
+	Name* n;
+	Net* np;
+	Pin(Dir dir, bool istopIo = false, Name* n);
+	Pin* next;
+};
+void NhookPin(Pin* p, Net* n);
 // TODO: Reference additional headers your program requires here.

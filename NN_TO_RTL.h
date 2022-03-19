@@ -6,8 +6,9 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
-#include <unordered_map>;
+#include <unordered_map>
 #include <map>
+using namespace std;
 enum ACT_FUNC
 {
 	RELU = 1,
@@ -108,9 +109,9 @@ public:
 	Netlist(NeuralNetwork* nt);
 	void createInports(int i);
 	void createOutports(int i);
-	std::vector<Net> createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net> previous_layer_nets);
+	std::vector<Net*> createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net*>& previous_layer_nets);
 	Net* createNet(bool isConst = false, float val = 0);
-	Net* createAdd(Net* i1, NNet* i2);
+	Net* createAdd(Net* i1, Net* i2);
 	Net* createMul(Net* np, float val);
 	Net* addBias(Net* np, float val);
 	Net* createActFunc(Net* np, Net* onp,ACT_FUNC f);
@@ -130,16 +131,18 @@ public :
 	Instance(InstType t);
 	Instance(ACT_FUNC f);
 	void createAdder();
-	void creatMult();
+	void createMult();
 	void createReg();
 
 };
 class Net {
-	static std::map< float val,Net* np> constMap;
+public:
+	static std::map< float ,Net* > constMap;
 	Name* n;
 	bool isPort;
 	Pin* pin;
 	bool isConst;
+	float val;
 	Net(Name* n, bool isPort = false,bool isConst = false,float val =0);
 	static Net* createConstNet(Name* n,float val);
 };
@@ -147,12 +150,12 @@ enum class Dir {
 	in, out
 };
 class Port {
+public:
 	Dir dir;
 	Name* n;
 	Net* np;
 	Pin* pin;
 	Netlist* nl;
-public:
 	Port(Netlist* nl, Dir dir);
 	Name* getName();
 };
@@ -162,7 +165,7 @@ public:
 	bool istopIO;
 	Name* n;
 	Net* np;
-	Pin(Dir dir, bool istopIo = false, Name* n);
+	Pin(Dir dir, bool istopIo, Name* n);
 	Pin* next;
 };
 void NhookPin(Pin* p, Net* n);

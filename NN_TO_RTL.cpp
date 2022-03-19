@@ -2,7 +2,8 @@
 //
 
 #include "NN_TO_RTL.h"
-
+#include <assert.h>
+#include<string>  
 using namespace std;
 NeuralNetwork* NeuralNetwork::nn = nullptr;
 istream& operator>>(istream& in, ACT_FUNC& x) {
@@ -142,6 +143,10 @@ void NeuralNetwork::createNetwork() {
 	}
 }
 
+std::vector<Layer*>& NeuralNetwork::getLayers() {
+	return network;
+}
+
 ACT_FUNC Layer::getActFunc(int layer_no) {
 	ACT_FUNC func;
 	cout << "Activation functon for layer" << layer_no << "1:Relu 2:Sigmoid 3:TANH 4:SoftMax " << endl;
@@ -155,27 +160,27 @@ NeuralNetwork* NeuralNetwork::getInstance(IO_TYPE io_type) {
 	} 
 	return nn;
 }
-std::unordered_map<Name*, Port*> Netlist::inports;
+/*/std::unordered_map<Name*, Port*> Netlist::inports;
 std::unordered_map<Name*, Port*>  Netlist::outports;
 std::unordered_map<Name*, Net*>  Netlist::nets;
-std::unordered_map<Name*, Instance*>  Netlist::insts;
+std::unordered_map<Name*, Instance*>  Netlist::insts;*/
 Netlist::Netlist(NeuralNetwork* nt) {
 	createInports(nt->getInputs());
 	createOutports(nt->getOutputs());
 	std::vector<Layer*> lvec = nt->getLayers();
-	std::vector<Net> previous_layer_nets;
+	std::vector<Net*> previous_layer_nets;
 	for (int i = 0; i < lvec.size(); i++) {
 		previous_layer_nets = createNetlistForLayer(lvec[i], (i == 0), (i == lvec.size() - 1), previous_layer_nets);
 	}
 }
 
-std::vector<Net> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net>& previous_layer_nets); {
-	std::vector<Net> outputNets;
+std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net*>& previous_layer_nets){
+	std::vector<Net*> outputNets;
 	int in = previous_layer_nets.size();
 	int out = l->getNoOfOutputs();;
 	if (is_input_layer) {
 		for (auto port : inports) {
-			previous_layers_nets.push_back(port->np);
+			previous_layer_nets.push_back(port.second->np);
 		}
 	}
 	if (!is_output_layer) {
@@ -184,60 +189,60 @@ std::vector<Net> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, b
 	}
 	else {
 		for (auto port : outports) {
-			previous_layers_nets.push_back(port->np);
+			outputNets.push_back(port.second->np);
 		}
 	}
 	for (int i = 0; i < out; i++) {
 		Precptron* p = l->getPreceptron(i);
-		ProcessPreceptron(p, previous_layer_nets, outNets[i]);
+		ProcessPreceptron(p, previous_layer_nets, outputNets[i]);
 	}
-	return outNets;
+	return outputNets;
 }
 
-Net* Netlist::createAdd(Net* i1, NNet* i2) {
+Net* Netlist::createAdd(Net* i1, Net* i2) {
 	Net* onp = createNet();
-	Intance* ip = new Intance(InstType::add);
+	Instance* ip = new Instance(InstType::add);
 	insts[ip->n] = ip;
-	NhookPin(input_pins[0], i1);
-	NhookPin(input_pins[1], i2);
-	NhookPin(output_pin, onp);
+	NhookPin(ip->input_pins[0], i1);
+	NhookPin(ip->input_pins[1], i2);
+	NhookPin(ip->output_pin, onp);
 	return onp;
 }
 
 Net* Netlist::createMul(Net* np, float val) {
 	Net* onp = createNet();
 	Net* cnp = createNet(true, val);
-	Intance* ip = new Intance(InstType::mult);
+	Instance* ip = new Instance(InstType::mult);
 	insts[ip->n] = ip;
-	NhookPin(input_pins[0], np);
-	NhookPin(input_pins[1], cnp);
-	NhookPin(output_pin, onp);
+	NhookPin(ip->input_pins[0], np);
+	NhookPin(ip->input_pins[1], cnp);
+	NhookPin(ip->output_pin, onp);
 	return onp;
 }
 
 Net* Netlist::addBias(Net* np, float val) {
 	Net* onp = createNet();
 	Net* cnp = createNet(true, val);
-	Intance* ip = new Intance(InstType::add);
+	Instance* ip = new Instance(InstType::add);
 	insts[ip->n] = ip;
-	NhookPin(input_pins[0], np);
-	NhookPin(input_pins[1], cnp);
-	NhookPin(output_pin, onp);
+	NhookPin(ip->input_pins[0], np);
+	NhookPin(ip->input_pins[1], cnp);
+	NhookPin(ip->output_pin, onp);
 	return onp;
 }
 
-NNet* Netlist::createActFunc(Net* np, Net* onp,ACT_FUNC f) {
+Net* Netlist::createActFunc(Net* np, Net* onp,ACT_FUNC f) {
 	if(!onp)
 		onp = createNet();
-	Intance* ip = new Intance(f);
+	Instance* ip = new Instance(f);
 	insts[ip->n] = ip;
-	NhookPin(input_pins[0], np);
-	NhookPin(output_pin, onp);
+	NhookPin(ip->input_pins[0], np);
+	NhookPin(ip->output_pin, onp);
 	return onp;
 }
 
 Net* Netlist::createNet(bool isConst, float val) {
-	Name* n = getUniqueName(NType::Net);
+	Name* n = Name::getUniqueName(NType::Net);
 	Net* np = NULL;
 	if (isConst) {
 		np = Net::createConstNet(n, val);
@@ -280,10 +285,14 @@ Port::Port(Netlist* nl, Dir dir) {
 	pin =new Pin(dir, true, n);
 	np = new Net(n, true);
 	NhookPin(pin, np);
-	nets[n] = np;
+	nl->nets[n] = np;
 
 }
-std::map< float val, Net* np> Net::constMap;
+Name* Port::getName() {
+	return n;
+}
+
+std::map< float, Net*> Net::constMap;
 Net::Net(Name* n, bool isPort, bool isConst, float val) {
 	this->n = n;
 	this->isPort = isPort;
@@ -292,14 +301,14 @@ Net::Net(Name* n, bool isPort, bool isConst, float val) {
 	this->val = val;
 }
 
-NNet* Net::createConstNet(Name* n,float  val) {
+Net* Net::createConstNet(Name* n,float  val) {
 	if (constMap.find(val) == constMap.end()) {
 		constMap[val] = new Net(n, false, true, val);
 	}
 	return constMap[val];
 }
 Instance::Instance(ACT_FUNC f) {
-	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("I"));
+	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("I")));
 	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
 }
 Instance::Instance(InstType t) {
@@ -312,7 +321,7 @@ Instance::Instance(InstType t) {
 	case InstType::mult:
 		createMult();
 		break;
-	case InstType:reg:
+	case InstType::reg:
 		createReg();
 		break;
 	}
@@ -320,37 +329,42 @@ Instance::Instance(InstType t) {
 
 void Instance::createAdder() {
 	for (int i = 0; i < 2; i++) {
-		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr(i==0)?"A":"B"));
+		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i==0)?"A":"B")));
 	}
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"))
+	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
 }
 
 void Instance::createMult() {
 	for (int i = 0; i < 2; i++) {
-		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr(i == 0) ? "A" : "B"));
+		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i == 0) ? "A" : "B")));
 	}
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"))
+	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
 }
 
 void Instance::createReg() {
 	for (int i = 0; i < 2; i++) {
-		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr(i == 0) ? "D" : "clk"));
+		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i == 0) ? "D" : "clk")));
 	}
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("Q"))
+	output_pin = new Pin(Dir::out, false, Name::getNameForStr("Q"));
 }
-
+Pin::Pin(Dir dir, bool istopIo, Name * n) {
+	this->dir = dir;
+	this->istopIO = istopIo;
+	this->n = n;
+	this->np = NULL;
+	this->next = NULL;
+}
 void NhookPin(Pin* p, Net* n) {
-	if (!np->pin) {
-		np->pin = p;
+	if (!n->pin) {
+		n->pin = p;
 	}
 	else {
-		Pins* t = n->pin;
+		Pin* t = n->pin;
 		while (t->next) {
 			t = t->next;
 		}
 		t->next = p;
 	}
-	ASSERT(p->np);
 	p->np = n;
 }
 
@@ -374,18 +388,19 @@ string Name::getNameStr(Name* n) {
 	return n->str;
 }
 Name* Name::getUniqueName(NType t) {
+	string s;
 	switch (t) {
 	case NType::Port:
-		string s = "port_" + port_c++;
+		s = "port_" + to_string(port_c++);
 		return getNameForStr(s);
 	case NType::Net:
-		string s = "net_" + net_c++;
+		s = "net_" + to_string(net_c++);
 		return getNameForStr(s);
 	case NType::Instance:
-		string s = "inst_" + instance_c++;
+		s = "inst_" + to_string(instance_c++);
 		return getNameForStr(s);
 	case NType::Pin:
-		string s = "pin_" + pin_c++;
+		s = "pin_" + to_string(pin_c++);
 		return getNameForStr(s);
 	}
 }
@@ -393,5 +408,6 @@ int main()
 {
 	NeuralNetwork* network = NeuralNetwork::getInstance(IO_TYPE::CONSOLE);
 	network->createNetwork();
+	Netlist* nl = new Netlist(network);
 	return 0;
 }

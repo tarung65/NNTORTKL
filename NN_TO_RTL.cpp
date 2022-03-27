@@ -3,7 +3,8 @@
 
 #include "NN_TO_RTL.h"
 #include <assert.h>
-#include<string>  
+#include<string> 
+#include <sstream>
 using namespace std;
 NeuralNetwork* NeuralNetwork::nn = nullptr;
 istream& operator>>(istream& in, ACT_FUNC& x) {
@@ -202,7 +203,7 @@ std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, 
 Net* Netlist::createAdd(Net* i1, Net* i2) {
 	Net* onp = createNet();
 	Instance* ip = new Instance(InstType::add);
-	insts[ip->n] = ip;
+	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], i1);
 	NhookPin(ip->input_pins[1], i2);
 	NhookPin(ip->output_pin, onp);
@@ -213,7 +214,7 @@ Net* Netlist::createMul(Net* np, float val) {
 	Net* onp = createNet();
 	Net* cnp = createNet(true, val);
 	Instance* ip = new Instance(InstType::mult);
-	insts[ip->n] = ip;
+	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
 	NhookPin(ip->input_pins[1], cnp);
 	NhookPin(ip->output_pin, onp);
@@ -224,7 +225,7 @@ Net* Netlist::addBias(Net* np, float val) {
 	Net* onp = createNet();
 	Net* cnp = createNet(true, val);
 	Instance* ip = new Instance(InstType::add);
-	insts[ip->n] = ip;
+	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
 	NhookPin(ip->input_pins[1], cnp);
 	NhookPin(ip->output_pin, onp);
@@ -235,7 +236,7 @@ Net* Netlist::createActFunc(Net* np, Net* onp,ACT_FUNC f) {
 	if(!onp)
 		onp = createNet();
 	Instance* ip = new Instance(f);
-	insts[ip->n] = ip;
+	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
 	NhookPin(ip->output_pin, onp);
 	return onp;
@@ -308,6 +309,9 @@ Net* Net::createConstNet(Name* n,float  val) {
 	return constMap[val];
 }
 Instance::Instance(ACT_FUNC f) {
+	n = Name::getUniqueName(NType::Instance);
+	func = f;
+	type = InstType::actFunc;
 	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("I")));
 	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
 }
@@ -403,11 +407,148 @@ Name* Name::getUniqueName(NType t) {
 		s = "pin_" + to_string(pin_c++);
 		return getNameForStr(s);
 	}
+	return NULL;
+}
+
+NetListWriter::NetListWriter(Netlist* nl) {
+	std::string file;
+	cin >> file;
+	ofs.open(file);
+	this->nl = nl;
+	this->writePort();
+	this->writeNets();
+	this->assignConst();
+	this->writeInst();
+	ofs << std::endl << "endmodule";
+	ofs.close();
+}
+
+void NetListWriter::writePort() {
+	ofs << "module(";
+	std::stringstream ss;
+	int i = 0;
+	for (auto p : nl->inports) {
+		if (i != 0)
+			ofs << ",";
+		std::string port = Name::getNameStr(p.first);
+		ofs << port;
+		ss << "input [31:0]" << port <<";" << std::endl;
+		i++;
+	}
+	for (auto p : nl->outports) {
+		ofs << ",";
+		std::string port = Name::getNameStr(p.first);
+		ofs << port;
+		ss << "output [31:0]" << port <<";" << std::endl;
+	}
+	ofs << ");" << std::endl;
+	ofs << ss.str() << std::endl;
+
+}
+
+void NetListWriter::writeNets() {
+	for (auto& n : nl->nets) {
+		if (n.second->isPort)
+			continue;
+		ofs << "wire [31:0]" << Name::getNameStr(n.first) <<" ;" << std::endl;
+	}
+}
+
+void NetListWriter::writeInst() {
+	for (auto i : nl->insts) {
+		std::string instName = Name::getNameStr(i->n);
+		std::string mod;
+		Instance* inst = i;
+		switch (inst->type) {
+		case InstType::add:
+			mod = "fadd";
+			break;
+		case InstType::mult:
+			mod = "fmult";
+			break;
+		case InstType::reg:
+			mod = "freg";
+			break;
+		case InstType::actFunc:
+		{
+			ACT_FUNC f = inst->func;
+			switch (f) {
+			case ACT_FUNC::RELU:
+				mod = "relu";
+				break;
+			case ACT_FUNC::SIGMOID:
+				mod = "sigmoid";
+				break;
+			case ACT_FUNC::SOFTMAX:
+				mod = "smax";
+				break;
+			case ACT_FUNC::TANH:
+				mod = "tanh";
+				break;
+			}
+			break;
+		}
+		}
+		ofs << mod << " " << instName << "(";
+		for (auto& p : inst->input_pins) {
+			std::string pinName = Name::getNameStr(p->n);
+			std::string netName = Name::getNameStr(p->np->n);
+			ofs << "." << pinName << "(" << netName << "),";
+		}
+		std::string opinName = Name::getNameStr(inst->output_pin->n);
+		std::string opinNetName = Name::getNameStr(inst->output_pin->np->n);
+		ofs << "." << opinName << "(" << opinNetName << "));" << std::endl;
+	}
+}
+void NetListWriter::assignConst() {
+	for (auto c : Net::constMap) {
+		float val = c.first;
+		std::string netName = Name::getNameStr(c.second->n);
+		std::string bVal = NetListWriter::getConstInBinary(val);
+		ofs << "assign " << netName << " = " << bVal <<" ;" << std::endl;
+	}
+}
+std::string NetListWriter::getConstInBinary(float val) {
+	bool sign = (val < 0) ? true : false;
+	val = (sign) ? (-val) : val;
+	int int_val = val;
+	float decimal_val = val - (float)int_val;
+	std::string dec = "";
+	for (int i = 0; i < 11; i++) {
+		decimal_val = decimal_val * 2;
+		if (decimal_val > 1) {
+			dec = dec + "1";
+			decimal_val = decimal_val - 1;
+		}
+		else {
+			dec = dec + "0";
+		}
+	}
+	while (dec.length() < 20) {
+		dec = "0" + dec;
+	}
+	std::string integer = "";
+	while (int_val > 0) {
+		if (int_val % 2 == 1) {
+			integer = "1" + integer;
+		}
+		int_val = int_val / 2;
+	}
+	if (integer.length() > 20) {
+		cout << "weight/bias doesn't fits in 32 bit fixed point number";
+		abort();
+	}
+	stringstream ss;
+	ss << "32'b" << (sign) ? "1" : "0";
+	ss << integer;
+	ss<< dec;
+	return ss.str();
 }
 int main()
 {
 	NeuralNetwork* network = NeuralNetwork::getInstance(IO_TYPE::CONSOLE);
 	network->createNetwork();
 	Netlist* nl = new Netlist(network);
+	NetListWriter nw(nl);
 	return 0;
 }

@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <map>
+#include<fstream>
 using namespace std;
 enum ACT_FUNC
 {
@@ -105,7 +106,7 @@ public:
 	std::unordered_map<Name*, Port*> inports;
 	std::unordered_map<Name*, Port*> outports;
 	std::unordered_map<Name*, Net*> nets;
-	std::unordered_map<Name*, Instance*> insts;
+	std::vector< Instance*> insts;
 	Netlist(NeuralNetwork* nt);
 	void createInports(int i);
 	void createOutports(int i);
@@ -169,4 +170,15 @@ public:
 	Pin* next;
 };
 void NhookPin(Pin* p, Net* n);
+class NetListWriter {
+	ofstream ofs;
+	Netlist* nl;
+public:
+	NetListWriter(Netlist* nl);
+	void writePort();
+	void writeNets();
+	void writeInst();
+	void assignConst();
+	static std::string getConstInBinary(float val);
+};
 // TODO: Reference additional headers your program requires here.

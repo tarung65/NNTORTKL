@@ -18,6 +18,18 @@ enum ACT_FUNC
 	SOFTMAX
 };
 
+class IFile {
+private:
+	static ifstream *f;
+public:
+	static bool isOpen();
+	static void Open(string file);
+	static string getline();
+	static vector<float> getinputsVec();
+	static void setPtr(ifstream* ptr);
+	static void close();
+};
+
 enum IO_TYPE {
 	CONSOLE = 1,
 	File
@@ -39,6 +51,11 @@ public:
 
 class Layer {
 	ACT_FUNC _act_func;
+	static const  string relu;
+	static const  string sigmoid;
+	static const  string tanh;
+	static const  string softmax;
+	IO_TYPE _io_type;
 	Layer* _previous_layer;
 	Layer* _next_layer;
 	int _no_preceptron;
@@ -48,7 +65,7 @@ public:
 	Layer(ACT_FUNC func, Layer* previous_layer, int no_preceptron, int layer_no, IO_TYPE io_type);
 	std::vector<std::vector<float>> getWeights(int layer_no,int no_preptron, IO_TYPE io_type);
 	std::vector<float> getBias(int layer_no,int no_preptron, IO_TYPE io_type);
-	static ACT_FUNC getActFunc(int layer_no);
+	static ACT_FUNC getActFunc(int layer_no, IO_TYPE _io_type);
 	void setNextLayer(Layer* next_layer) {
 		this->_next_layer = next_layer;
 	}

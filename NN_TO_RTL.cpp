@@ -7,6 +7,44 @@
 #include <sstream>
 using namespace std;
 NeuralNetwork* NeuralNetwork::nn = nullptr;
+ifstream* IFile::f = NULL ;
+const string Layer::relu = "RELU";
+const string Layer::sigmoid = "SIGMOID";
+const string Layer::tanh = "TANH";
+const string Layer::softmax = "SOFTMAX";
+static void corupptedFile() {
+	cout << "Corrupted File";
+	abort();
+}
+bool IFile::isOpen() {
+	return f->is_open();
+}
+void IFile::Open(string file) {
+	f->open(file);
+}
+string IFile::getline() {
+	string line;
+	std::getline(*f, line);
+	return line;
+}
+void IFile::close() {
+	f->close();
+}
+void IFile::setPtr(ifstream* ptr) {
+	f = ptr;
+}
+vector<float> IFile::getinputsVec() {
+	std::string line;
+	std::getline(*f, line);
+	stringstream ss(line);
+	vector<float> res;
+	string temp_str;
+
+	while (std::getline(ss, temp_str, ',')) { //use comma as delim for cutting string
+		res.push_back(std::stof(temp_str));
+	}
+	return res;
+}
 istream& operator>>(istream& in, ACT_FUNC& x) {
 	int val;
 	if (in >> val) {
@@ -46,6 +84,7 @@ ACT_FUNC Precptron::getActFunc() {
 }
 Layer::Layer(ACT_FUNC func, Layer* previous_layer, int no_preceptron, int layer_no,IO_TYPE io_type):
 	_act_func(func),
+	_io_type(io_type),
 	_previous_layer(previous_layer),
 	_no_preceptron(no_preceptron)
 {
@@ -76,6 +115,11 @@ std::vector<float> Layer::getWeightsNode(IO_TYPE io_type,int layer,int precptron
 			weight.push_back(w);
 		}
 	}
+	else {
+		weight = IFile::getinputsVec();
+		if (weight.size() != ninputs)
+			corupptedFile();
+	}
 	return weight;
 }
 
@@ -96,6 +140,12 @@ std::vector<float> Layer::getBias(int layer_no, int no_precptron, IO_TYPE io_typ
 			biasVec.push_back(b);
 		}
 	}
+	else {
+		biasVec = IFile::getinputsVec();
+		if (biasVec.size() != no_precptron) {
+			corupptedFile();
+		}
+	}
 	return biasVec;
 }
 void NeuralNetwork::get_IO_number() 
@@ -108,6 +158,17 @@ void NeuralNetwork::get_IO_number()
 		cout << "Number of outputs";
 		cin >> _no_outputs;
 	}
+	else {
+		if (!IFile::isOpen())
+			abort();
+		string line;
+		line = IFile::getline();
+		_no_layers = std::stoi(line);
+		line = IFile::getline();
+		_no_inputs = std::stoi(line);
+		line = IFile::getline();
+		_no_outputs = std::stoi(line);
+	}
 }
 
 int NeuralNetwork::get_no_precptron(int i) {
@@ -115,6 +176,10 @@ int NeuralNetwork::get_no_precptron(int i) {
 	if (_io_type == CONSOLE) {
 		cout << "No of precptron in layer " << i;
 		cin >> n;
+	}
+	else {
+		string line = IFile::getline();
+		n = std::stoi(line);
 	}
 	return n;
 }
@@ -136,7 +201,7 @@ void NeuralNetwork::createNetwork() {
 			prev = network[i - 1];
 		int no_precptron = get_no_precptron(i);
 
-		ACT_FUNC func = Layer::getActFunc(i + 1);
+		ACT_FUNC func = Layer::getActFunc(i + 1, _io_type);
 		Layer* l = new Layer(func, prev, no_precptron, i + 1, _io_type);
 		network.push_back(l);
 		if (prev)
@@ -148,10 +213,25 @@ std::vector<Layer*>& NeuralNetwork::getLayers() {
 	return network;
 }
 
-ACT_FUNC Layer::getActFunc(int layer_no) {
+ACT_FUNC Layer::getActFunc(int layer_no, IO_TYPE _io_type) {
 	ACT_FUNC func;
-	cout << "Activation functon for layer" << layer_no << "1:Relu 2:Sigmoid 3:TANH 4:SoftMax " << endl;
-	cin >> func;
+	if (_io_type == IO_TYPE::CONSOLE) {
+		cout << "Activation functon for layer" << layer_no << "1:Relu 2:Sigmoid 3:TANH 4:SoftMax " << endl;
+		cin >> func;
+	}
+	else {
+		string line = IFile::getline();
+		if (line.compare(Layer::relu) == 0) {
+			func = ACT_FUNC::RELU;
+		} else if (line.compare(Layer::sigmoid) == 0) {
+			func = ACT_FUNC::SIGMOID;
+		}else if (line.compare(Layer::tanh) == 0) {
+			func = ACT_FUNC::TANH;
+		}else if (line.compare(Layer::softmax) == 0) {
+			func = ACT_FUNC::SOFTMAX;
+		}
+
+	}
 	return func;
 }
 
@@ -544,9 +624,40 @@ std::string NetListWriter::getConstInBinary(float val) {
 	ss<< dec;
 	return ss.str();
 }
-int main()
+int main( int argc,char* argv[])
 {
-	NeuralNetwork* network = NeuralNetwork::getInstance(IO_TYPE::CONSOLE);
+	NeuralNetwork* network = NULL;
+	ifstream fs;
+	if (argc > 3) {
+		cout << "Unknown argument";
+		abort();
+	} else if (argc == 3) {
+		string arg1 = argv[1];
+		if (arg1.compare("--file") == 0 || arg1.compare("-f") == 0) {
+			string file = argv[2];
+			fs.open(file);
+			IFile::setPtr(&fs);
+			network = NeuralNetwork::getInstance(IO_TYPE::File);
+		}
+		else {
+			cout << "Unknown argument";
+			abort();
+		}
+	}
+	else if (argc == 2) {
+		string arg1 = argv[1];
+		if (arg1.compare("--help") == 0 || arg1.compare("-h") == 0) {
+			cout << "--file" << "Data File";
+			abort();
+		}
+		else {
+			cout << "Unknown argument";
+			abort();
+		}
+	}
+	else {
+		network = NeuralNetwork::getInstance(IO_TYPE::CONSOLE);
+	}
 	network->createNetwork();
 	Netlist* nl = new Netlist(network);
 	NetListWriter nw(nl);

@@ -37,13 +37,13 @@ enum IO_TYPE {
 class Layer;
 class Precptron {
 	ACT_FUNC _act_func;
-	int _no_inputs;
+	size_t _no_inputs;
 	std::vector <float> _weights;
 	float _bias;
 	Layer* owner;
 public:
-	Precptron(ACT_FUNC func, int no_inputs, std::vector< float>& weights,Layer* l, float bias);
-	float getWeight(int i);
+	Precptron(ACT_FUNC func, size_t no_inputs, std::vector< float>& weights,Layer* l, float bias);
+	float getWeight(size_t i);
 	float getBias();
 	ACT_FUNC getActFunc();
 };
@@ -58,21 +58,21 @@ class Layer {
 	IO_TYPE _io_type;
 	Layer* _previous_layer;
 	Layer* _next_layer;
-	int _no_preceptron;
+	size_t _no_preceptron;
 	std::vector< Precptron*> _precptron;
-	std::vector<float> getWeightsNode(IO_TYPE io_type, int layer, int precptron);
+	std::vector<float> getWeightsNode(IO_TYPE io_type, int layer, size_t precptron);
 public:
-	Layer(ACT_FUNC func, Layer* previous_layer, int no_preceptron, int layer_no, IO_TYPE io_type);
-	std::vector<std::vector<float>> getWeights(int layer_no,int no_preptron, IO_TYPE io_type);
-	std::vector<float> getBias(int layer_no,int no_preptron, IO_TYPE io_type);
+	Layer(ACT_FUNC func, Layer* previous_layer, size_t no_preceptron, int layer_no, IO_TYPE io_type);
+	std::vector<std::vector<float>> getWeights(int layer_no,size_t no_preptron, IO_TYPE io_type);
+	std::vector<float> getBias(int layer_no,size_t no_preptron, IO_TYPE io_type);
 	static ACT_FUNC getActFunc(int layer_no, IO_TYPE _io_type);
 	void setNextLayer(Layer* next_layer) {
 		this->_next_layer = next_layer;
 	}
-	int getNoOfOutputs() {
+	size_t getNoOfOutputs() {
 		return _no_preceptron;
 	}
-	Precptron* getPreceptron(int i) {
+	Precptron* getPreceptron(size_t i) {
 		return _precptron[i];
 	}
 };

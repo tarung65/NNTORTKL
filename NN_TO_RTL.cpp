@@ -61,8 +61,9 @@ istream& operator>>(istream& in, ACT_FUNC& x) {
 			break;
 		}
 	}
+	return in;
 }
-Precptron::Precptron(ACT_FUNC func, int no_inputs, std::vector< float>& weights,Layer* l, float bias):
+Precptron::Precptron(ACT_FUNC func, size_t no_inputs, std::vector< float>& weights,Layer* l, float bias):
 	_act_func(func),
 	_no_inputs(no_inputs),
 	owner(l),
@@ -72,7 +73,7 @@ Precptron::Precptron(ACT_FUNC func, int no_inputs, std::vector< float>& weights,
 	}
 }
 
-float Precptron::getWeight(int i) {
+float Precptron::getWeight(size_t i) {
 	return _weights[i];
 }
 
@@ -82,7 +83,7 @@ float Precptron::getBias() {
 ACT_FUNC Precptron::getActFunc() {
 	return _act_func;
 }
-Layer::Layer(ACT_FUNC func, Layer* previous_layer, int no_preceptron, int layer_no,IO_TYPE io_type):
+Layer::Layer(ACT_FUNC func, Layer* previous_layer, size_t no_preceptron, int layer_no,IO_TYPE io_type):
 	_act_func(func),
 	_io_type(io_type),
 	_previous_layer(previous_layer),
@@ -95,12 +96,12 @@ Layer::Layer(ACT_FUNC func, Layer* previous_layer, int no_preceptron, int layer_
 		ninputs = _previous_layer->_precptron.size();
 	else
 		ninputs = NeuralNetwork::getInstance(io_type)->getInputs();
-	for (int i = 0; i < no_preceptron; i++) {
+	for (size_t i = 0; i < no_preceptron; i++) {
 		Precptron* p = new Precptron(_act_func, ninputs, weight_mat[i], this, bias_vec[i]);
 		_precptron.push_back(p);
 	}
 }
-std::vector<float> Layer::getWeightsNode(IO_TYPE io_type,int layer,int precptron) {
+std::vector<float> Layer::getWeightsNode(IO_TYPE io_type,int layer,size_t precptron) {
 	size_t  ninputs = 0;
 	if (_previous_layer)
 		ninputs = _previous_layer->_precptron.size();
@@ -123,18 +124,18 @@ std::vector<float> Layer::getWeightsNode(IO_TYPE io_type,int layer,int precptron
 	return weight;
 }
 
-std::vector<std::vector<float>> Layer::getWeights(int layer_no, int no_preptron, IO_TYPE io_type) {
+std::vector<std::vector<float>> Layer::getWeights(int layer_no, size_t no_preptron, IO_TYPE io_type) {
 	std::vector<std::vector<float>> weight_mat;
-	for (int i = 0; i < no_preptron; i++) {
+	for (size_t i = 0; i < no_preptron; i++) {
 		weight_mat.push_back(getWeightsNode(io_type, layer_no, i));
 	}
 	return weight_mat;
 }
-std::vector<float> Layer::getBias(int layer_no, int no_precptron, IO_TYPE io_type) {
+std::vector<float> Layer::getBias(int layer_no, size_t no_precptron, IO_TYPE io_type) {
 	std::vector<float> biasVec;
 	if (io_type == IO_TYPE::CONSOLE) {
 		cout << "Get Bias vec for each precptron in Layer" << layer_no;
-		for (int i = 0; i < no_precptron; i++) {
+		for (size_t i = 0; i < no_precptron; i++) {
 			float b;
 			cin >> b;
 			biasVec.push_back(b);
@@ -250,22 +251,22 @@ Netlist::Netlist(NeuralNetwork* nt) {
 	createOutports(nt->getOutputs());
 	std::vector<Layer*> lvec = nt->getLayers();
 	std::vector<Net*> previous_layer_nets;
-	for (int i = 0; i < lvec.size(); i++) {
+	for (size_t i = 0; i < lvec.size(); i++) {
 		previous_layer_nets = createNetlistForLayer(lvec[i], (i == 0), (i == lvec.size() - 1), previous_layer_nets);
 	}
 }
 
 std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net*>& previous_layer_nets){
 	std::vector<Net*> outputNets;
-	int in = previous_layer_nets.size();
-	int out = l->getNoOfOutputs();;
+	size_t in = previous_layer_nets.size();
+	size_t out = l->getNoOfOutputs();;
 	if (is_input_layer) {
 		for (auto port : inports) {
 			previous_layer_nets.push_back(port.second->np);
 		}
 	}
 	if (!is_output_layer) {
-		for(int i =0 ;i<out;i++)
+		for(size_t i =0 ;i<out;i++)
 			outputNets.push_back(createNet());
 	}
 	else {
@@ -273,7 +274,7 @@ std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, 
 			outputNets.push_back(port.second->np);
 		}
 	}
-	for (int i = 0; i < out; i++) {
+	for (size_t i = 0; i < out; i++) {
 		Precptron* p = l->getPreceptron(i);
 		ProcessPreceptron(p, previous_layer_nets, outputNets[i]);
 	}
@@ -349,11 +350,11 @@ void Netlist::createOutports(int i) {
 }
 void Netlist::ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net* onp) {
 	std::vector<Net*> mulOut;
-	for (int i = 0; i < inputNets.size(); i++) {
+	for (size_t i = 0; i < inputNets.size(); i++) {
 		mulOut.push_back(createMul(inputNets[i], p->getWeight(i)));
 	}
 	Net* snp = mulOut[0];
-	for (int i = 1; i < inputNets.size(); i++) {
+	for (size_t i = 1; i < inputNets.size(); i++) {
 		snp = createAdd(snp, mulOut[i]);
 	}
 	snp = addBias(snp, p->getBias());
@@ -515,6 +516,8 @@ void NetListWriter::writePort() {
 		ss << "input [31:0]" << port <<";" << std::endl;
 		i++;
 	}
+	ofs << ",clk";
+	ss << "input clk ;" << std::endl;
 	for (auto p : nl->outports) {
 		ofs << ",";
 		std::string port = Name::getNameStr(p.first);
@@ -575,6 +578,9 @@ void NetListWriter::writeInst() {
 			std::string netName = Name::getNameStr(p->np->n);
 			ofs << "." << pinName << "(" << netName << "),";
 		}
+		if (inst->type == InstType::actFunc) {
+			ofs << ".clk(clk),";
+		}
 		std::string opinName = Name::getNameStr(inst->output_pin->n);
 		std::string opinNetName = Name::getNameStr(inst->output_pin->np->n);
 		ofs << "." << opinName << "(" << opinNetName << "));" << std::endl;
@@ -591,7 +597,7 @@ void NetListWriter::assignConst() {
 std::string NetListWriter::getConstInBinary(float val) {
 	bool sign = (val < 0) ? true : false;
 	val = (sign) ? (-val) : val;
-	int int_val = val;
+	int int_val = (int) val;
 	float decimal_val = val - (float)int_val;
 	std::string dec = "";
 	for (int i = 0; i < 11; i++) {

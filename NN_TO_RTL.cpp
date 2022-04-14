@@ -248,8 +248,10 @@ std::unordered_map<Name*, Net*>  Netlist::nets;
 std::unordered_map<Name*, Instance*>  Netlist::insts;*/
 Netlist::Netlist(NeuralNetwork* nt) {
 	createInports(nt->getInputs());
-	createOutports(nt->getOutputs());
 	std::vector<Layer*> lvec = nt->getLayers();
+	for (int i = 0; i < lvec.size() - 1; i++)
+		enable_net_vec.push_back(Netlist::createNetSingleBit());
+	createOutports(nt->getOutputs());
 	std::vector<Net*> previous_layer_nets;
 	for (size_t i = 0; i < lvec.size(); i++) {
 		previous_layer_nets = createNetlistForLayer(lvec[i], (i == 0), (i == lvec.size() - 1), previous_layer_nets);
@@ -258,11 +260,15 @@ Netlist::Netlist(NeuralNetwork* nt) {
 
 std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net*>& previous_layer_nets){
 	std::vector<Net*> outputNets;
+	std::vector<Net*> enNets;
+	static int count = 0;
 	size_t in = previous_layer_nets.size();
 	size_t out = l->getNoOfOutputs();;
 	if (is_input_layer) {
 		for (auto port : inports) {
-			previous_layer_nets.push_back(port.second->np);
+			Net* np = port.second->np;
+			if(!np->isSinglebit)
+				previous_layer_nets.push_back(np);
 		}
 	}
 	if (!is_output_layer) {
@@ -271,13 +277,20 @@ std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, 
 	}
 	else {
 		for (auto port : outports) {
-			outputNets.push_back(port.second->np);
+			if(!port.second->np->isSinglebit)
+				outputNets.push_back(port.second->np);
 		}
 	}
 	for (size_t i = 0; i < out; i++) {
-		Precptron* p = l->getPreceptron(i);
-		ProcessPreceptron(p, previous_layer_nets, outputNets[i]);
+		enNets.push_back(createNetSingleBit());
 	}
+	for (size_t i = 0; i < out; i++) {
+		Precptron* p = l->getPreceptron(i);
+		ProcessPreceptron(p, previous_layer_nets, outputNets[i],enNets[i], enable_net_vec[count]);
+	}
+	createAnd(enNets, enable_net_vec[count + 1]);
+	this->andInst.insert(out);
+	count++;
 	return outputNets;
 }
 
@@ -287,7 +300,7 @@ Net* Netlist::createAdd(Net* i1, Net* i2) {
 	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], i1);
 	NhookPin(ip->input_pins[1], i2);
-	NhookPin(ip->output_pin, onp);
+	NhookPin(ip->output_pins[0], onp);
 	return onp;
 }
 
@@ -298,10 +311,17 @@ Net* Netlist::createMul(Net* np, float val) {
 	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
 	NhookPin(ip->input_pins[1], cnp);
-	NhookPin(ip->output_pin, onp);
+	NhookPin(ip->output_pins[0], onp);
 	return onp;
 }
-
+Net* Netlist::createAnd(vector<Net*>&inputs, Net* outNp) {
+	Instance* ip = new Instance(inputs.size());
+	insts.push_back(ip);
+	for (int i = 0; i < inputs.size(); i++)
+		NhookPin(ip->input_pins[i], inputs[i]);
+	NhookPin(ip->output_pins[0], outNp);
+	return outNp;
+}
 Net* Netlist::addBias(Net* np, float val) {
 	Net* onp = createNet();
 	Net* cnp = createNet(true, val);
@@ -309,17 +329,20 @@ Net* Netlist::addBias(Net* np, float val) {
 	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
 	NhookPin(ip->input_pins[1], cnp);
-	NhookPin(ip->output_pin, onp);
+	NhookPin(ip->output_pins[0], onp);
 	return onp;
 }
 
-Net* Netlist::createActFunc(Net* np, Net* onp,ACT_FUNC f) {
+Net* Netlist::createActFunc(Net* np, Net* onp,ACT_FUNC f,Net* n_enableNet,Net* p_enableNet) {
 	if(!onp)
 		onp = createNet();
 	Instance* ip = new Instance(f);
 	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
-	NhookPin(ip->output_pin, onp);
+	NhookPin(ip->input_pins[1], this->clk);
+	NhookPin(ip->input_pins[2], p_enableNet);
+	NhookPin(ip->output_pins[0], onp);
+	NhookPin(ip->output_pins[1], n_enableNet);
 	return onp;
 }
 
@@ -335,11 +358,24 @@ Net* Netlist::createNet(bool isConst, float val) {
 	nets[np->n] = np;
 	return np;
 }
+Net* Netlist::createNetSingleBit() {
+	Name* n = Name::getUniqueName(NType::Net);
+	Net* np = Net::createSingleBitNet(n);
+	nets[np->n] = np;
+	return np;
+}
 void Netlist::createInports(int i) {
 	for (int j = 0; j < i; j++) {
 		Port* p = new Port(this, Dir::in);
 		inports[p->getName()] = p;
 	}
+	Port* p = new Port(this, Dir::in, Name::getNameForStr("clk"), true);
+	inports[p->getName()] = p;
+	this->clk = p->np;
+	p = new Port(this, Dir::in, Name::getNameForStr("en"), true);
+	inports[p->getName()] = p;
+	enable_net_vec.push_back(p->np);
+
 }
 
 void Netlist::createOutports(int i) {
@@ -347,8 +383,11 @@ void Netlist::createOutports(int i) {
 		Port* p = new Port(this, Dir::out);
 		outports[p->getName()] = p;
 	}
+	Port* p = new Port(this, Dir::in, Name::getNameForStr("outEn"), true);
+	outports[p->getName()] = p;
+	enable_net_vec.push_back(p->np);
 }
-void Netlist::ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net* onp) {
+void Netlist::ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net* onp,Net* n_enableNet,Net* p_enableNet) {
 	std::vector<Net*> mulOut;
 	for (size_t i = 0; i < inputNets.size(); i++) {
 		mulOut.push_back(createMul(inputNets[i], p->getWeight(i)));
@@ -358,14 +397,17 @@ void Netlist::ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net*
 		snp = createAdd(snp, mulOut[i]);
 	}
 	snp = addBias(snp, p->getBias());
-	createActFunc(snp, onp, p->getActFunc());
+	createActFunc(snp, onp, p->getActFunc(), n_enableNet, p_enableNet);
 }
-Port::Port(Netlist* nl, Dir dir) {
+Port::Port(Netlist* nl, Dir dir,Name* n1,bool is_Single) {
 	this->nl = nl;
 	this->dir = dir;
-	n = Name::getUniqueName(NType::Port);
+	if (n1)
+		n = n1;
+	else
+		n = Name::getUniqueName(NType::Port);
 	pin =new Pin(dir, true, n);
-	np = new Net(n, true);
+	np = new Net(n, true,false,0, is_Single);
 	NhookPin(pin, np);
 	nl->nets[n] = np;
 
@@ -375,12 +417,13 @@ Name* Port::getName() {
 }
 
 std::map< float, Net*> Net::constMap;
-Net::Net(Name* n, bool isPort, bool isConst, float val) {
+Net::Net(Name* n, bool isPort, bool isConst, float val,bool isSinglebit) {
 	this->n = n;
 	this->isPort = isPort;
 	this->pin = NULL;
 	this->isConst = isConst;
 	this->val = val;
+	this->isSinglebit = isSinglebit;
 }
 
 Net* Net::createConstNet(Name* n,float  val) {
@@ -389,12 +432,18 @@ Net* Net::createConstNet(Name* n,float  val) {
 	}
 	return constMap[val];
 }
+Net* Net::createSingleBitNet(Name* n) {
+	return new Net(n,false,false,0,true);
+}
 Instance::Instance(ACT_FUNC f) {
 	n = Name::getUniqueName(NType::Instance);
 	func = f;
 	type = InstType::actFunc;
 	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("I")));
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
+	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("clk")));
+	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("en")));
+	output_pins.push_back(new Pin(Dir::out, false, Name::getNameForStr("O")));
+	output_pins.push_back(new Pin(Dir::out, false, Name::getNameForStr("n_en")));
 }
 Instance::Instance(InstType t) {
 	n = Name::getUniqueName(NType::Instance);
@@ -411,26 +460,37 @@ Instance::Instance(InstType t) {
 		break;
 	}
 }
-
+Instance::Instance(int i) {
+	type = InstType::And;
+	n = Name::getUniqueName(NType::Instance);
+	createAnd(i);
+}
 void Instance::createAdder() {
 	for (int i = 0; i < 2; i++) {
 		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i==0)?"A":"B")));
 	}
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
+	output_pins.push_back(new Pin(Dir::out, false, Name::getNameForStr("O")));
 }
 
 void Instance::createMult() {
 	for (int i = 0; i < 2; i++) {
 		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i == 0) ? "A" : "B")));
 	}
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("O"));
+	output_pins.push_back( new Pin(Dir::out, false, Name::getNameForStr("O")));
 }
 
 void Instance::createReg() {
 	for (int i = 0; i < 2; i++) {
 		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i == 0) ? "D" : "clk")));
 	}
-	output_pin = new Pin(Dir::out, false, Name::getNameForStr("Q"));
+	output_pins.push_back(new Pin(Dir::out, false, Name::getNameForStr("Q")));
+}
+void Instance::createAnd(int n) {
+	for (int i = 0; i < n; i++) {
+		string s = "I" + to_string(i);
+		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr(s)));
+	}
+	output_pins.push_back(new Pin(Dir::out, false, Name::getNameForStr("O")));
 }
 Pin::Pin(Dir dir, bool istopIo, Name * n) {
 	this->dir = dir;
@@ -496,6 +556,7 @@ NetListWriter::NetListWriter(Netlist* nl) {
 	cin >> file;
 	ofs.open(file);
 	this->nl = nl;
+	this->writeAndMod();
 	this->writePort();
 	this->writeNets();
 	this->assignConst();
@@ -505,7 +566,7 @@ NetListWriter::NetListWriter(Netlist* nl) {
 }
 
 void NetListWriter::writePort() {
-	ofs << "module(";
+	ofs << "module top (";
 	std::stringstream ss;
 	int i = 0;
 	for (auto p : nl->inports) {
@@ -513,16 +574,23 @@ void NetListWriter::writePort() {
 			ofs << ",";
 		std::string port = Name::getNameStr(p.first);
 		ofs << port;
-		ss << "input [31:0]" << port <<";" << std::endl;
+		if (p.second->np->isSinglebit)
+			ss << "input ";
+		else
+			ss << "input [31:0]";
+		ss<< port <<";" << std::endl;
 		i++;
 	}
-	ofs << ",clk";
-	ss << "input clk ;" << std::endl;
 	for (auto p : nl->outports) {
 		ofs << ",";
 		std::string port = Name::getNameStr(p.first);
 		ofs << port;
-		ss << "output [31:0]" << port <<";" << std::endl;
+
+		if (p.second->np->isSinglebit)
+			ss << "output ";
+		else
+			ss << "output [31:0]";
+		ss <<  port <<";" << std::endl;
 	}
 	ofs << ");" << std::endl;
 	ofs << ss.str() << std::endl;
@@ -571,6 +639,11 @@ void NetListWriter::writeInst() {
 			}
 			break;
 		}
+		case InstType::And:
+		{
+			mod = "AND_" + to_string(inst->input_pins.size());
+			break;
+		}
 		}
 		ofs << mod << " " << instName << "(";
 		for (auto& p : inst->input_pins) {
@@ -578,12 +651,17 @@ void NetListWriter::writeInst() {
 			std::string netName = Name::getNameStr(p->np->n);
 			ofs << "." << pinName << "(" << netName << "),";
 		}
-		if (inst->type == InstType::actFunc) {
-			ofs << ".clk(clk),";
+		int count = 0;
+		int size = inst->output_pins.size();
+		for (auto& p : inst->output_pins) {
+			std::string pinName = Name::getNameStr(p->n);
+			std::string netName = Name::getNameStr(p->np->n);
+			ofs << "." << pinName << "(" << netName << ")";
+			if(count < size-1)
+				ofs<<",";
+			count++;
 		}
-		std::string opinName = Name::getNameStr(inst->output_pin->n);
-		std::string opinNetName = Name::getNameStr(inst->output_pin->np->n);
-		ofs << "." << opinName << "(" << opinNetName << "));" << std::endl;
+		ofs << ");" << std::endl;
 	}
 }
 void NetListWriter::assignConst() {
@@ -594,13 +672,35 @@ void NetListWriter::assignConst() {
 		ofs << "assign " << netName << " = " << bVal <<" ;" << std::endl;
 	}
 }
+void NetListWriter::writeAndMod()
+{
+	for (auto n : nl->andInst) {
+		ofs << "module "<<"AND_"<<n<<" (";
+		std::stringstream ss;
+		for (size_t i = 0; i < n; i++) {
+			ofs << "I" << i << ",";
+			ss << "input" << " I" << i << ";" << std::endl;
+		}
+		ofs << "O);" << std::endl;
+		ss << "output O ;" << std::endl;
+		ofs << ss.str()<<std::endl;
+		ss.clear();
+		ofs << "assign O = ";
+		for (size_t i = 0; i < n; i++) {
+			if (i > 0)
+				ofs << " & ";
+			ofs << "I" << i << " ";
+		}
+		ofs << ";" << std::endl << "endmodule" << std::endl<<std::endl;
+	}
+}
 std::string NetListWriter::getConstInBinary(float val) {
 	bool sign = (val < 0) ? true : false;
 	val = (sign) ? (-val) : val;
 	int int_val = (int) val;
 	float decimal_val = val - (float)int_val;
 	std::string dec = "";
-	for (int i = 0; i < 11; i++) {
+	for (int i = 0; i < 24; i++) {
 		decimal_val = decimal_val * 2;
 		if (decimal_val > 1) {
 			dec = dec + "1";
@@ -620,7 +720,7 @@ std::string NetListWriter::getConstInBinary(float val) {
 		}
 		int_val = int_val / 2;
 	}
-	if (integer.length() > 20) {
+	if (integer.length() > 8) {
 		cout << "weight/bias doesn't fits in 32 bit fixed point number";
 		abort();
 	}

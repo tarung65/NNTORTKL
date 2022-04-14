@@ -7,6 +7,7 @@
 #include <vector>
 #include <stdexcept>
 #include <unordered_map>
+#include<unordered_set>
 #include <map>
 #include<fstream>
 using namespace std;
@@ -124,19 +125,24 @@ public:
 	std::unordered_map<Name*, Port*> outports;
 	std::unordered_map<Name*, Net*> nets;
 	std::vector< Instance*> insts;
+	std::vector<Net*> enable_net_vec;
+	std::unordered_set<size_t> andInst;
+	Net* clk;
 	Netlist(NeuralNetwork* nt);
 	void createInports(int i);
 	void createOutports(int i);
+	void ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net* onp, Net* n_enableNet, Net* p_enableNet);
 	std::vector<Net*> createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net*>& previous_layer_nets);
 	Net* createNet(bool isConst = false, float val = 0);
+	Net* createNetSingleBit();
 	Net* createAdd(Net* i1, Net* i2);
 	Net* createMul(Net* np, float val);
+	Net* createAnd(vector<Net*>& inputs, Net* outNp);
 	Net* addBias(Net* np, float val);
-	Net* createActFunc(Net* np, Net* onp,ACT_FUNC f);
-	void ProcessPreceptron(Precptron* p,std::vector<Net*>& inputNets,Net* onp);
+	Net* createActFunc(Net* np, Net* onp, ACT_FUNC f, Net* n_enableNet, Net* p_enableNet);
 };
 enum class InstType {
-	add,mult,reg,actFunc
+	add,mult,reg,actFunc,And
 };
 
 class Instance {
@@ -145,12 +151,14 @@ public :
 	InstType type;
 	ACT_FUNC func;
 	std::vector<Pin*> input_pins;
-	Pin* output_pin;
+	std::vector<Pin*> output_pins;
 	Instance(InstType t);
+	Instance(int i);
 	Instance(ACT_FUNC f);
 	void createAdder();
 	void createMult();
 	void createReg();
+	void createAnd(int i);
 
 };
 class Net {
@@ -161,8 +169,10 @@ public:
 	Pin* pin;
 	bool isConst;
 	float val;
-	Net(Name* n, bool isPort = false,bool isConst = false,float val =0);
+	bool isSinglebit;
+	Net(Name* n, bool isPort = false,bool isConst = false,float val =0, bool isSinglebit=false);
 	static Net* createConstNet(Name* n,float val);
+	static Net* createSingleBitNet(Name* n);
 };
 enum class Dir {
 	in, out
@@ -174,7 +184,7 @@ public:
 	Net* np;
 	Pin* pin;
 	Netlist* nl;
-	Port(Netlist* nl, Dir dir);
+	Port(Netlist* nl, Dir dir, Name* n1 = NULL, bool is_Single=false);
 	Name* getName();
 };
 class Pin {
@@ -196,6 +206,7 @@ public:
 	void writeNets();
 	void writeInst();
 	void assignConst();
+	void writeAndMod();
 	static std::string getConstInBinary(float val);
 };
 // TODO: Reference additional headers your program requires here.

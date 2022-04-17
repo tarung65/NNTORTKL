@@ -31,6 +31,15 @@ public:
 	static void close();
 };
 
+class OFile {
+private:
+	static ofstream* f;
+public:
+	static bool isOpen();
+	static bool open(string file);
+	static ofstream& getStream();
+	static void close();
+};
 enum IO_TYPE {
 	CONSOLE = 1,
 	File
@@ -198,7 +207,7 @@ public:
 };
 void NhookPin(Pin* p, Net* n);
 class NetListWriter {
-	ofstream ofs;
+	ofstream& ofs;
 	Netlist* nl;
 public:
 	NetListWriter(Netlist* nl);

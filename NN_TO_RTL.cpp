@@ -551,10 +551,7 @@ Name* Name::getUniqueName(NType t) {
 	return NULL;
 }
 
-NetListWriter::NetListWriter(Netlist* nl) {
-	std::string file;
-	cin >> file;
-	ofs.open(file);
+NetListWriter::NetListWriter(Netlist* nl):ofs(OFile::getStream()) {
 	this->nl = nl;
 	this->writeAndMod();
 	this->writePort();
@@ -562,7 +559,6 @@ NetListWriter::NetListWriter(Netlist* nl) {
 	this->assignConst();
 	this->writeInst();
 	ofs << std::endl << "endmodule";
-	ofs.close();
 }
 
 void NetListWriter::writePort() {
@@ -601,7 +597,11 @@ void NetListWriter::writeNets() {
 	for (auto& n : nl->nets) {
 		if (n.second->isPort)
 			continue;
-		ofs << "wire [31:0]" << Name::getNameStr(n.first) <<" ;" << std::endl;
+		if (n.second->isSinglebit)
+			ofs << "wire ";
+		else
+			ofs << "wire [31:0]";
+		ofs<< Name::getNameStr(n.first) <<" ;" << std::endl;
 	}
 }
 
@@ -734,26 +734,57 @@ int main( int argc,char* argv[])
 {
 	NeuralNetwork* network = NULL;
 	ifstream fs;
+	IFile::setPtr(&fs);
 	if (argc > 3) {
 		cout << "Unknown argument";
 		abort();
-	} else if (argc == 3) {
+	} else if (argc >= 3) {
 		string arg1 = argv[1];
+		string arg2 = argv[2];
 		if (arg1.compare("--file") == 0 || arg1.compare("-f") == 0) {
-			string file = argv[2];
+			string file = arg2;
 			fs.open(file);
-			IFile::setPtr(&fs);
 			network = NeuralNetwork::getInstance(IO_TYPE::File);
+		}
+		else if (arg1.compare("--ofile") == 0 || arg1.compare("-o") == 0) {
+			string file = arg2;
+			OFile::open(file);
 		}
 		else {
 			cout << "Unknown argument";
 			abort();
+		}
+		if (argc >= 5) {
+			string arg1 = argv[3];
+			string arg2 = argv[4];
+			if (arg1.compare("--file") == 0 || arg1.compare("-f") == 0) {
+				if (IFile::isOpen()) {
+					cout << "Multiple Input file";
+					abort();
+				}
+				string file = arg2;
+				fs.open(file);
+				network = NeuralNetwork::getInstance(IO_TYPE::File);
+			}
+			else if (arg1.compare("--ofile") == 0 || arg1.compare("-o") == 0) {
+				if (OFile::isOpen()) {
+					cout << "Multiple Output files";
+					abort();
+				}
+				string file = arg2;
+				OFile::open(file);
+			}
+			else {
+				cout << "Unknown argument";
+				abort();
+			}
 		}
 	}
 	else if (argc == 2) {
 		string arg1 = argv[1];
 		if (arg1.compare("--help") == 0 || arg1.compare("-h") == 0) {
-			cout << "--file" << "Data File";
+			cout << "--file" << "Data File"<<std::endl;
+			cout << "--ofile" << "output verilog file" << std::endl;
 			abort();
 		}
 		else {
@@ -761,11 +792,43 @@ int main( int argc,char* argv[])
 			abort();
 		}
 	}
-	else {
+	if(!IFile::isOpen()) {
 		network = NeuralNetwork::getInstance(IO_TYPE::CONSOLE);
+	}
+	if (!OFile::isOpen()) {
+		cout << "Output file: ";
+		string file;
+		cin >> file;
+		OFile::open(file);
 	}
 	network->createNetwork();
 	Netlist* nl = new Netlist(network);
 	NetListWriter nw(nl);
+	OFile::close();
 	return 0;
+}
+ofstream* OFile::f = NULL;
+bool OFile::isOpen()
+{
+	if(f)
+		return f->is_open();
+	return false;
+}
+
+bool OFile::open(string file)
+{
+	f = new ofstream();
+	f->open(file);
+	return isOpen();
+}
+
+ofstream& OFile::getStream()
+{
+	// // O: insert return statement here
+	return(*f);
+}
+void OFile::close() {
+	f->close();
+	delete f;
+	f = NULL;
 }

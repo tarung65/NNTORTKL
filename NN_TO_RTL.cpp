@@ -63,28 +63,27 @@ istream& operator>>(istream& in, ACT_FUNC& x) {
 	}
 	return in;
 }
-Precptron::Precptron(ACT_FUNC func, size_t no_inputs, std::vector< float>& weights,Layer* l, float bias):
+Perceptron::Perceptron(ACT_FUNC func, size_t no_inputs, std::vector< float>& weights,Layer* l, float bias):
 	_act_func(func),
 	_no_inputs(no_inputs),
 	owner(l),
-	_bias(0) {
+	_bias(bias) {
 	for (auto w : weights) {
 		_weights.push_back(w);
 	}
 }
 
-float Precptron::getWeight(size_t i) {
+float Perceptron::getWeight(size_t i) {
 	return _weights[i];
 }
 
-float Precptron::getBias() {
+float Perceptron::getBias() {
 	return _bias;
 }
-ACT_FUNC Precptron::getActFunc() {
+ACT_FUNC Perceptron::getActFunc() {
 	return _act_func;
 }
 Layer::Layer(ACT_FUNC func, Layer* previous_layer, size_t no_preceptron, int layer_no,IO_TYPE io_type):
-	_act_func(func),
 	_io_type(io_type),
 	_previous_layer(previous_layer),
 	_no_preceptron(no_preceptron)
@@ -97,7 +96,7 @@ Layer::Layer(ACT_FUNC func, Layer* previous_layer, size_t no_preceptron, int lay
 	else
 		ninputs = NeuralNetwork::getInstance(io_type)->getInputs();
 	for (size_t i = 0; i < no_preceptron; i++) {
-		Precptron* p = new Precptron(_act_func, ninputs, weight_mat[i], this, bias_vec[i]);
+		Perceptron* p = new Perceptron(func, ninputs, weight_mat[i], this, bias_vec[i]);
 		_precptron.push_back(p);
 	}
 }
@@ -264,6 +263,7 @@ std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, 
 	static int count = 0;
 	size_t in = previous_layer_nets.size();
 	size_t out = l->getNoOfOutputs();;
+	Net* tmpNp = createNetSingleBit();
 	if (is_input_layer) {
 		for (auto port : inports) {
 			Net* np = port.second->np;
@@ -285,10 +285,14 @@ std::vector<Net*> Netlist::createNetlistForLayer(Layer* l, bool is_input_layer, 
 		enNets.push_back(createNetSingleBit());
 	}
 	for (size_t i = 0; i < out; i++) {
-		Precptron* p = l->getPreceptron(i);
-		ProcessPreceptron(p, previous_layer_nets, outputNets[i],enNets[i], enable_net_vec[count]);
+		Perceptron* p = l->getPreceptron(i);
+		Net* tmpOutNet = createNet();
+		ProcessPreceptron(p, previous_layer_nets, tmpOutNet,enNets[i], enable_net_vec[count]);
+		createReg(tmpOutNet, this->clk, tmpNp, outputNets[i], false);
 	}
-	createAnd(enNets, enable_net_vec[count + 1]);
+	
+	createAnd(enNets, tmpNp);
+	createReg(tmpNp, this->clk, truenp, enable_net_vec[count + 1], true);
 	this->andInst.insert(out);
 	count++;
 	return outputNets;
@@ -322,6 +326,18 @@ Net* Netlist::createAnd(vector<Net*>&inputs, Net* outNp) {
 	NhookPin(ip->output_pins[0], outNp);
 	return outNp;
 }
+Net* Netlist::createReg(Net* in, Net* clk, Net* en, Net* out, bool isSingle)
+{
+	Instance* ip = new Instance(InstType::reg);
+	ip->isSingleBit = isSingle;
+	insts.push_back(ip);
+	NhookPin(ip->input_pins[0], in);
+	NhookPin(ip->input_pins[1], en);
+	NhookPin(ip->input_pins[2], clk);
+	NhookPin(ip->output_pins[0], out);
+	return out;
+}
+
 Net* Netlist::addBias(Net* np, float val) {
 	Net* onp = createNet();
 	Net* cnp = createNet(true, val);
@@ -339,7 +355,7 @@ Net* Netlist::createActFunc(Net* np, Net* onp,ACT_FUNC f,Net* n_enableNet,Net* p
 	Instance* ip = new Instance(f);
 	insts.push_back(ip);
 	NhookPin(ip->input_pins[0], np);
-	NhookPin(ip->input_pins[1], this->clk);
+	NhookPin(ip->input_pins[1], this->fsclk);
 	NhookPin(ip->input_pins[2], p_enableNet);
 	NhookPin(ip->output_pins[0], onp);
 	NhookPin(ip->output_pins[1], n_enableNet);
@@ -372,6 +388,10 @@ void Netlist::createInports(int i) {
 	Port* p = new Port(this, Dir::in, Name::getNameForStr("clk"), true);
 	inports[p->getName()] = p;
 	this->clk = p->np;
+	p = new Port(this, Dir::in, Name::getNameForStr("fsclk"), true);
+	inports[p->getName()] = p;
+	this->fsclk = p->np;
+	this->truenp = Netlist::createNetSingleBit();
 	p = new Port(this, Dir::in, Name::getNameForStr("en"), true);
 	inports[p->getName()] = p;
 	enable_net_vec.push_back(p->np);
@@ -387,7 +407,7 @@ void Netlist::createOutports(int i) {
 	outports[p->getName()] = p;
 	enable_net_vec.push_back(p->np);
 }
-void Netlist::ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net* onp,Net* n_enableNet,Net* p_enableNet) {
+void Netlist::ProcessPreceptron(Perceptron* p, std::vector<Net*>& inputNets, Net* onp,Net* n_enableNet,Net* p_enableNet) {
 	std::vector<Net*> mulOut;
 	for (size_t i = 0; i < inputNets.size(); i++) {
 		mulOut.push_back(createMul(inputNets[i], p->getWeight(i)));
@@ -480,9 +500,9 @@ void Instance::createMult() {
 }
 
 void Instance::createReg() {
-	for (int i = 0; i < 2; i++) {
-		input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr((i == 0) ? "D" : "clk")));
-	}
+	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("D")));
+	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("en")));
+	input_pins.push_back(new Pin(Dir::in, false, Name::getNameForStr("clk")));
 	output_pins.push_back(new Pin(Dir::out, false, Name::getNameForStr("Q")));
 }
 void Instance::createAnd(int n) {
@@ -617,9 +637,6 @@ void NetListWriter::writeInst() {
 		case InstType::mult:
 			mod = "fmult";
 			break;
-		case InstType::reg:
-			mod = "freg";
-			break;
 		case InstType::actFunc:
 		{
 			ACT_FUNC f = inst->func;
@@ -643,6 +660,14 @@ void NetListWriter::writeInst() {
 		{
 			mod = "AND_" + to_string(inst->input_pins.size());
 			break;
+		}
+		case InstType::reg:
+		{
+			mod = "REG_";
+			if (inst->isSingleBit)
+				mod += "s";
+			else
+				mod += "m";
 		}
 		}
 		ofs << mod << " " << instName << "(";
@@ -671,6 +696,7 @@ void NetListWriter::assignConst() {
 		std::string bVal = NetListWriter::getConstInBinary(val);
 		ofs << "assign " << netName << " = " << bVal <<" ;" << std::endl;
 	}
+	ofs << "assign " << Name::getNameStr(nl->truenp->n) << " = 1'b1 ;" << std::endl;
 }
 void NetListWriter::writeAndMod()
 {
@@ -702,12 +728,13 @@ std::string NetListWriter::getConstInBinary(float val) {
 	std::string dec = "";
 	for (int i = 0; i < 24; i++) {
 		decimal_val = decimal_val * 2;
-		if (decimal_val > 1) {
-			dec = dec + "1";
+		if (decimal_val > 1)
+		{
+			dec = dec + (sign ? "0":"1");
 			decimal_val = decimal_val - 1;
 		}
 		else {
-			dec = dec + "0";
+			dec = dec + (sign ? "1" : "0");
 		}
 	}
 	while (dec.length() < 20) {
@@ -716,7 +743,7 @@ std::string NetListWriter::getConstInBinary(float val) {
 	std::string integer = "";
 	while (int_val > 0) {
 		if (int_val % 2 == 1) {
-			integer = "1" + integer;
+			integer = (sign ? "0" : "1") + integer;
 		}
 		int_val = int_val / 2;
 	}

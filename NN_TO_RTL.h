@@ -45,14 +45,14 @@ enum IO_TYPE {
 	File
 };
 class Layer;
-class Precptron {
+class Perceptron {
 	ACT_FUNC _act_func;
 	size_t _no_inputs;
 	std::vector <float> _weights;
 	float _bias;
 	Layer* owner;
 public:
-	Precptron(ACT_FUNC func, size_t no_inputs, std::vector< float>& weights,Layer* l, float bias);
+	Perceptron(ACT_FUNC func, size_t no_inputs, std::vector< float>& weights,Layer* l, float bias);
 	float getWeight(size_t i);
 	float getBias();
 	ACT_FUNC getActFunc();
@@ -60,7 +60,6 @@ public:
 
 
 class Layer {
-	ACT_FUNC _act_func;
 	static const  string relu;
 	static const  string sigmoid;
 	static const  string tanh;
@@ -69,7 +68,7 @@ class Layer {
 	Layer* _previous_layer;
 	Layer* _next_layer;
 	size_t _no_preceptron;
-	std::vector< Precptron*> _precptron;
+	std::vector< Perceptron*> _precptron;
 	std::vector<float> getWeightsNode(IO_TYPE io_type, int layer, size_t precptron);
 public:
 	Layer(ACT_FUNC func, Layer* previous_layer, size_t no_preceptron, int layer_no, IO_TYPE io_type);
@@ -82,7 +81,7 @@ public:
 	size_t getNoOfOutputs() {
 		return _no_preceptron;
 	}
-	Precptron* getPreceptron(size_t i) {
+	Perceptron* getPreceptron(size_t i) {
 		return _precptron[i];
 	}
 };
@@ -136,17 +135,19 @@ public:
 	std::vector< Instance*> insts;
 	std::vector<Net*> enable_net_vec;
 	std::unordered_set<size_t> andInst;
-	Net* clk;
+	Net* clk , *fsclk;
+	Net* truenp;
 	Netlist(NeuralNetwork* nt);
 	void createInports(int i);
 	void createOutports(int i);
-	void ProcessPreceptron(Precptron* p, std::vector<Net*>& inputNets, Net* onp, Net* n_enableNet, Net* p_enableNet);
+	void ProcessPreceptron(Perceptron* p, std::vector<Net*>& inputNets, Net* onp, Net* n_enableNet, Net* p_enableNet);
 	std::vector<Net*> createNetlistForLayer(Layer* l, bool is_input_layer, bool is_output_layer, std::vector<Net*>& previous_layer_nets);
 	Net* createNet(bool isConst = false, float val = 0);
 	Net* createNetSingleBit();
 	Net* createAdd(Net* i1, Net* i2);
 	Net* createMul(Net* np, float val);
 	Net* createAnd(vector<Net*>& inputs, Net* outNp);
+	Net* createReg(Net* in, Net* clk, Net* en, Net* out, bool isSingle);
 	Net* addBias(Net* np, float val);
 	Net* createActFunc(Net* np, Net* onp, ACT_FUNC f, Net* n_enableNet, Net* p_enableNet);
 };
@@ -161,6 +162,7 @@ public :
 	ACT_FUNC func;
 	std::vector<Pin*> input_pins;
 	std::vector<Pin*> output_pins;
+	bool isSingleBit;
 	Instance(InstType t);
 	Instance(int i);
 	Instance(ACT_FUNC f);
